@@ -44,6 +44,9 @@ fn main() {
       (@subcommand new =>
        (about: "Checks for new files in the database")
        )
+      (@subcommand create =>
+       (about: "Creates a new file, add it to the database, and returns it's path")
+       )
     ).setting(clap::AppSettings::ArgRequiredElseHelp);
     let matches = app.get_matches();
 
@@ -58,7 +61,7 @@ fn main() {
         .init()
         .unwrap();
 
-    let mut db = Database::create().unwrap();
+    let mut db = Database::open().unwrap();
     if let Some(matches) = matches.subcommand_matches("add") {
         let to_add: Vec<Zest> = matches.values_of("FILE").unwrap().filter_map(|fname| {
             match Zest::from_file(fname.to_owned()) {
@@ -85,5 +88,8 @@ fn main() {
         db.update().unwrap();
     } else if let Some(_) = matches.subcommand_matches("new") {
         db.new().unwrap();
+    } else if matches.subcommand_matches("create").is_some() {
+        let (path, _) = db.create().unwrap();
+        println!("{}", path);
     }
 }

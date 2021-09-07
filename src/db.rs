@@ -5,13 +5,14 @@ use std::error::Error;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use tantivy::collector::{DocSetCollector, Count};
+use std::path::PathBuf;
+use tantivy::collector::{Count, DocSetCollector};
 use tantivy::directory::MmapDirectory;
 use tantivy::query::{AllQuery, QueryParser, TermQuery};
 use tantivy::schema::{
     Field, IndexRecordOption, Schema, Term, TextFieldIndexing, TextOptions, STORED, STRING, TEXT,
 };
-use tantivy::{tokenizer::*, Searcher};
+use tantivy::{tokenizer::*, DateTime, Searcher};
 use tantivy::{DocAddress, Document, Score, UserOperation};
 use tantivy::{Index, IndexReader, IndexWriter, Opstamp};
 use xdg::{BaseDirectories, BaseDirectoriesError};
@@ -32,7 +33,7 @@ lazy_static! {
         .expect("Impossible to create XDG directories");
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Debug)]
 struct Config {
     #[serde(default)]
     paths: Vec<String>,
@@ -126,7 +127,7 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn create() -> Result<Self, DatabaseError> {
+    pub fn open() -> Result<Self, DatabaseError> {
         log::trace!("Open XDG directory");
         let dir = XDG_DIR
             .create_cache_directory("index")
@@ -166,6 +167,8 @@ impl Database {
             Config::default()
         };
 
+        log::debug!("Using config : {:?}", config);
+
         Ok(Database {
             config,
             index,
@@ -187,7 +190,7 @@ impl Database {
         let mut doc = Document::new();
 
         if let Ok(time) = metadata.modified() {
-            let time = tantivy::DateTime::from(time);
+            let time = DateTime::from(time);
             log::trace!("Creating {} with modified time of {}", fname, time);
             doc.add_date(schema.last_modif, &time);
         } else {
@@ -306,26 +309,31 @@ impl Database {
     fn check_new(&mut self, schema: &DatabaseSchema, searcher: &Searcher) {
         // We're forced to do so because of the immutable borrow in the first for loop
         let mut new_docs: Vec<Zest> = Vec::new();
-        for path in self.config.paths.iter() {
+        for path in &self.config.paths {
+            log::trace!("Looking into {}", path);
             if let Ok(dmeta) = std::fs::metadata(path) {
                 if !dmeta.is_dir() {
                     log::warn!("{} is not a directory.", path);
                     continue;
                 }
 
-                let files = walkdir::WalkDir::new(std::fs::canonicalize(path).unwrap())
-                    .into_iter()
-                    .filter_entry(|e| {
-                        if let Ok(meta) = std::fs::metadata(e.path()) {
-                            meta.is_file()
-                        } else {
-                            false
+                for entry in walkdir::WalkDir::new(std::fs::canonicalize(path).unwrap()) {
+                    let entry = if let Ok(e) = entry {
+                        e
+                    } else {
+                        continue;
+                    };
+                    if let Ok(meta) = std::fs::metadata(entry.path()) {
+                        if !meta.is_file() {
+                            continue;
                         }
-                    });
+                    } else {
+                        continue;
+                    }
 
-                for entry in files {
-                    let entry = std::fs::canonicalize(entry.unwrap().path()).unwrap();
+                    let entry = std::fs::canonicalize(entry.path()).unwrap();
                     let entry = entry.to_str().unwrap();
+                    log::trace!("Checking {}", entry);
                     let query = TermQuery::new(
                         Term::from_field_text(schema.path, entry),
                         IndexRecordOption::Basic,
@@ -333,7 +341,8 @@ impl Database {
 
                     if searcher.search(&query, &Count).unwrap() == 0 {
                         // This file is not tracked yet, track it then
-                        if let Ok(z) = Zest:: from_file(entry.to_owned()) {
+                        log::info!("{} is not tracked yet, adding it", entry);
+                        if let Ok(z) = Zest::from_file(entry.to_owned()) {
                             new_docs.push(z);
                         } else {
                             log::warn!("Could not parse {}", entry);
@@ -377,7 +386,7 @@ impl Database {
                 ))?;
 
             if let Ok(meta) = std::fs::metadata(&fname) {
-                let curr_changetime = tantivy::DateTime::from(meta.modified().unwrap());
+                let curr_changetime = DateTime::from(meta.modified().unwrap());
                 if curr_changetime.timestamp() > changetime.timestamp() {
                     match Zest::from_file(fname.clone()) {
                         Ok(z) => {
@@ -402,5 +411,29 @@ impl Database {
         }
 
         self.commit()
+    }
+
+    /// Creates a new file, adds it to the database, and returns it's full path
+    pub fn create(&mut self) -> Result<(String, Opstamp), DatabaseError> {
+        if self.config.paths.is_empty() {
+            return Err(DatabaseError::ConfigError(String::from(
+                "The config does not specify paths",
+            )));
+        }
+        let curtime = DateTime::from(std::time::SystemTime::now());
+        let root = std::fs::canonicalize(self.config.paths.get(0).unwrap()).unwrap();
+        let mut p = PathBuf::from(root);
+        p.push(curtime.format("%Y_%m_%d_%H_%M_%S.md").to_string());
+
+        let p = p.to_str().unwrap();
+        File::create(p).unwrap();
+        let z = if let Ok(z) = Zest::from_file(p.to_owned()) {
+            z
+        } else {
+            unreachable!("zest should consider empty files as valid")
+        };
+
+        let opstamp = self.put(z)?;
+        Ok((p.to_owned(), opstamp))
     }
 }
