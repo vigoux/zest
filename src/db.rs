@@ -155,10 +155,17 @@ impl Database {
         let conffile = XDG_DIR
             .place_config_file("config.yml")
             .map_err(|e| DatabaseError::DirectoryError(e))?;
-        let conffile =
-            BufReader::new(File::open(conffile).map_err(|e| DatabaseError::DirectoryError(e))?);
-        let config = serde_yaml::from_reader(conffile)
-            .map_err(|e| DatabaseError::ConfigError(e.to_string()))?;
+        let config = if let Ok(conffile) = File::open(conffile) {
+            let conffile = BufReader::new(conffile);
+            if let Ok(c) = serde_yaml::from_reader(conffile) {
+                c
+            } else {
+                Config::default()
+            }
+        } else {
+            Config::default()
+        };
+
         Ok(Database {
             config,
             index,
