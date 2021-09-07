@@ -4,18 +4,18 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::PathBuf;
 use tantivy::collector::{Count, DocSetCollector};
 use tantivy::directory::MmapDirectory;
 use tantivy::query::{AllQuery, QueryParser, TermQuery};
 use tantivy::schema::{
-    Field, IndexRecordOption, Schema, Term, TextFieldIndexing, TextOptions, STORED, STRING, TEXT,
+    Field, IndexRecordOption, Schema, Term, STORED, STRING, TEXT,
 };
 use tantivy::{tokenizer::*, DateTime, Searcher};
-use tantivy::{DocAddress, Document, Score, UserOperation};
+use tantivy::{DocAddress, Document, UserOperation};
 use tantivy::{Index, IndexReader, IndexWriter, Opstamp};
-use xdg::{BaseDirectories, BaseDirectoriesError};
+use xdg::BaseDirectories;
 
 #[cfg(feature = "graph")]
 use dot::{GraphWalk, Labeller};
@@ -31,7 +31,6 @@ const FILE_FIELD: &'static str = "file";
 const PATH_FIELD: &'static str = "path";
 const REF_FIELD: &'static str = "ref";
 const LAST_MODIF_FIELD: &'static str = "lastmod";
-const CUSTOM_TOKENIZER: &'static str = "custom";
 
 lazy_static! {
     static ref XDG_DIR: BaseDirectories = BaseDirectories::with_prefix(clap::crate_name!())
@@ -57,16 +56,9 @@ struct DatabaseSchema {
 
 impl DatabaseSchema {
     fn new() -> Self {
-        fn make_text_options() -> TextOptions {
-            let text_indexing = TextFieldIndexing::default()
-                .set_tokenizer(CUSTOM_TOKENIZER)
-                .set_index_option(IndexRecordOption::WithFreqsAndPositions);
-            TextOptions::default().set_indexing_options(text_indexing)
-        }
-
         let mut schema_builder = Schema::builder();
-        let title = schema_builder.add_text_field(TITLE_FIELD, make_text_options());
-        let content = schema_builder.add_text_field(CONTENT_FIELD, make_text_options());
+        let title = schema_builder.add_text_field(TITLE_FIELD, TEXT);
+        let content = schema_builder.add_text_field(CONTENT_FIELD, TEXT);
         let tag = schema_builder.add_text_field(TAG_FIELD, STRING);
         let file = schema_builder.add_text_field(FILE_FIELD, TEXT);
         let path = schema_builder.add_text_field(PATH_FIELD, STRING | STORED);
@@ -138,18 +130,10 @@ impl Database {
             .create_cache_directory("index")
             .map_err(|e| DatabaseError::DirectoryError(e))?;
 
-        log::trace!("Creating tokenizers");
-        let custom_stem = TextAnalyzer::from(SimpleTokenizer)
-            .filter(RemoveLongFilter::limit(40))
-            .filter(LowerCaser)
-            .filter(Stemmer::new(Language::French));
-
         log::trace!("Open index");
         let dir = MmapDirectory::open(dir).map_err(|e| DatabaseError::OpenError(e))?;
         let index = Index::open_or_create(dir, DatabaseSchema::new().schema)
             .map_err(|e| DatabaseError::CreateError(e))?;
-
-        index.tokenizers().register(CUSTOM_TOKENIZER, custom_stem);
 
         log::trace!("Create writer and reader");
         let writer = index
