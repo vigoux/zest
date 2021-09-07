@@ -39,8 +39,11 @@ fn main() {
        (@arg QUERY_TERMS: +required ... "Tantivy query to run")
       )
       (@subcommand update =>
-       (about: "Update all the files in the database")
+       (about: "Synchronizes the database, also checks for new files")
       )
+      (@subcommand new =>
+       (about: "Checks for new files in the database")
+       )
     )
     .get_matches();
 
@@ -55,14 +58,18 @@ fn main() {
         .init()
         .unwrap();
 
-    let mut db = Database::new().unwrap();
+    let mut db = Database::create().unwrap();
     if let Some(matches) = matches.subcommand_matches("add") {
-        for file in matches.values_of("FILE").unwrap() {
-            match Zest::from_file(file.to_owned()) {
-                Ok(z) => { db.put(z).unwrap(); },
-                Err(e) => error!("{} is could not be successfully added: {}", file, e),
+        let to_add: Vec<Zest> = matches.values_of("FILE").unwrap().filter_map(|fname| {
+            match Zest::from_file(fname.to_owned()) {
+                Ok(z) => Some(z),
+                Err(e) => {
+                    error!("{} is could not be successfully added: {}", fname, e);
+                    None
+                }
             }
-        }
+        }).collect();
+        db.put_multiple(to_add).unwrap();
     } else if let Some(matches) = matches.subcommand_matches("search") {
         let terms: Vec<&str> = matches.values_of("QUERY_TERMS").unwrap().collect();
         let query = terms.join(" ");
@@ -76,5 +83,7 @@ fn main() {
         db.remove(query).unwrap();
     } else if let Some(_) = matches.subcommand_matches("update") {
         db.update().unwrap();
+    } else if let Some(_) = matches.subcommand_matches("new") {
+        db.new().unwrap();
     }
 }
