@@ -7,9 +7,10 @@ use db::Database;
 use log::error;
 use log::LevelFilter;
 use simple_logger::SimpleLogger;
+use std::error::Error;
 use zest::Zest;
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     // let mut schema_builder = Schema::builder();
     // let title = schema_builder.add_text_field("title", TEXT);
     // let content = schema_builder.add_text_field("content", TEXT);
@@ -23,7 +24,7 @@ fn main() {
     //     );
 
     // println!("{:?}", doc);
-    let app = clap_app!(zest =>
+    let mut app = clap_app!(zest =>
       (author: "Thomas Vigouroux <tomvig38@gmail.com>")
       (@arg verbose: -v ... "Verbosity level")
       (@subcommand add =>
@@ -31,7 +32,8 @@ fn main() {
        (@arg FILE: +required ... "Files to add in the database")
       )
       (@subcommand search =>
-       (about: "Search into the database for files")
+       (about: "Search into the database for files and print their files and titles")
+       (@arg only_files: -f --only-files "Only print file paths")
        (@arg QUERY_TERMS: +required ... "Tantivy query to run") // We will actually concatenate those
       )
       (@subcommand remove =>
@@ -47,7 +49,19 @@ fn main() {
       (@subcommand create =>
        (about: "Creates a new file, add it to the database, and returns it's path")
        )
-    ).setting(clap::AppSettings::ArgRequiredElseHelp);
+      (@subcommand reindex =>
+       (about: "Reindexes the whole database as once. If some links are broken, this could fix it")
+       )
+    )
+    .setting(clap::AppSettings::ArgRequiredElseHelp);
+
+    #[cfg(feature = "graph")]
+    {
+        app = app.subcommand(
+            clap::SubCommand::with_name("graph").about("Shows a graph representing the database"),
+        );
+    }
+
     let matches = app.get_matches();
 
     SimpleLogger::new()
@@ -58,38 +72,80 @@ fn main() {
             _ => LevelFilter::Trace,
         })
         .with_colors(true)
-        .init()
-        .unwrap();
+        .init()?;
 
-    let mut db = Database::open().unwrap();
+    let mut db = Database::open()?;
+
+    if matches.subcommand_matches("update").is_some() {
+        db.update()?;
+        return Ok(());
+    }
+
+    if matches.subcommand_matches("new").is_some() {
+        db.new()?;
+        return Ok(());
+    }
+
+    if let Some(matches) = matches.subcommand_matches("search") {
+        let terms: Vec<&str> = matches.values_of("QUERY_TERMS").unwrap().collect();
+        let query = terms.join(" ");
+
+        if matches.is_present("only_files") {
+            for f in db.list(query)? {
+                println!("{}", f);
+            }
+        } else {
+            for r in db.search(query)? {
+                println!("{}: {}", r.file, r.title);
+            }
+        }
+        return Ok(());
+    }
+
+    if matches.subcommand_matches("create").is_some() {
+        let (path, _) = db.create()?;
+        println!("{}", path);
+        return Ok(());
+    }
+
+    if matches.subcommand_matches("reindex").is_some() {
+        db.reindex()?;
+        return Ok(());
+    }
+
+    if let Some(matches) = matches.subcommand_matches("remove") {
+        let terms: Vec<&str> = matches.values_of("QUERY_TERMS").unwrap().collect();
+        let query = terms.join(" ");
+        db.remove(query)?;
+        return Ok(());
+    }
+
     if let Some(matches) = matches.subcommand_matches("add") {
-        let to_add: Vec<Zest> = matches.values_of("FILE").unwrap().filter_map(|fname| {
-            match Zest::from_file(fname.to_owned()) {
+        let to_add: Vec<Zest> = matches
+            .values_of("FILE")
+            .unwrap()
+            .filter_map(|fname| match Zest::from_file(fname.to_owned()) {
                 Ok(z) => Some(z),
                 Err(e) => {
                     error!("{} is could not be successfully added: {}", fname, e);
                     None
                 }
-            }
-        }).collect();
-        db.put_multiple(to_add).unwrap();
-    } else if let Some(matches) = matches.subcommand_matches("search") {
-        let terms: Vec<&str> = matches.values_of("QUERY_TERMS").unwrap().collect();
-        let query = terms.join(" ");
-
-        for r in db.search(query).unwrap() {
-            println!("{}: {}", r.file, r.title);
-        }
-    } else if let Some(matches) = matches.subcommand_matches("remove") {
-        let terms: Vec<&str> = matches.values_of("QUERY_TERMS").unwrap().collect();
-        let query = terms.join(" ");
-        db.remove(query).unwrap();
-    } else if let Some(_) = matches.subcommand_matches("update") {
-        db.update().unwrap();
-    } else if let Some(_) = matches.subcommand_matches("new") {
-        db.new().unwrap();
-    } else if matches.subcommand_matches("create").is_some() {
-        let (path, _) = db.create().unwrap();
-        println!("{}", path);
+            })
+            .collect();
+        db.put_multiple(to_add)?;
+        return Ok(());
     }
+
+    #[cfg(feature = "graph")]
+    if matches.subcommand_matches("graph").is_some() {
+        let mut tmp_dir = std::env::temp_dir();
+        tmp_dir.push("graph.dot");
+        let path = tmp_dir.to_str().unwrap();
+        println!("{}", path);
+        let mut file = std::fs::File::create(tmp_dir)?;
+        dot::render(&db, &mut file).unwrap();
+        return Ok(());
+    }
+
+    Ok(())
 }

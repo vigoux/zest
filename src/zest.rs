@@ -31,13 +31,13 @@ impl Error for ZestParsingError {
     }
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, Clone)]
 pub struct ZestMeta {
     #[serde(default)]
     pub tags: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Zest {
     pub title: String,
     pub content: String,

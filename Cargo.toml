@@ -15,6 +15,11 @@ xdg = "2.2.0"
 simple_logger = "1.13.0"
 log = "0.4.14"
 walkdir = "2.3.2"
+dot = { version = "0.1.4", optional = true }
+
+[features]
+default = ['graph']
+graph = ['dot']
 
 [dependencies.clap]
 version = "2.33.3"

@@ -17,6 +17,11 @@ use tantivy::{DocAddress, Document, Score, UserOperation};
 use tantivy::{Index, IndexReader, IndexWriter, Opstamp};
 use xdg::{BaseDirectories, BaseDirectoriesError};
 
+#[cfg(feature = "graph")]
+use dot::{GraphWalk, Labeller};
+#[cfg(feature = "graph")]
+use std::borrow::Cow;
+
 use crate::Zest;
 
 const TITLE_FIELD: &'static str = "title";
@@ -25,7 +30,7 @@ const TAG_FIELD: &'static str = "tag";
 const FILE_FIELD: &'static str = "file";
 const PATH_FIELD: &'static str = "path";
 const REF_FIELD: &'static str = "ref";
-const LAST_MODIF_FIELD: &'static str = "ref";
+const LAST_MODIF_FIELD: &'static str = "lastmod";
 const CUSTOM_TOKENIZER: &'static str = "custom";
 
 lazy_static! {
@@ -206,9 +211,13 @@ impl Database {
         }
 
         for reff in z.refs {
-            doc.add_text(schema.reff, reff);
+            for matching in self.list(format!("file:{}", reff)).unwrap() {
+                log::info!("{} references {}", fname, matching);
+                doc.add_text(schema.reff, matching);
+            }
         }
 
+        log::debug!("Adding {:?}", doc);
         self.writer.add_document(doc);
     }
 
@@ -435,5 +444,100 @@ impl Database {
 
         let opstamp = self.put(z)?;
         Ok((p.to_owned(), opstamp))
+    }
+
+    pub fn list(&mut self, query: String) -> Result<Vec<String>, DatabaseError> {
+        log::debug!("Listing with query: {}", query);
+        let schema = DatabaseSchema::new();
+        let searcher = self.reader.searcher();
+        let query_parser = QueryParser::for_index(&self.index, vec![schema.content, schema.title]);
+        let q = query_parser
+            .parse_query(query.as_ref())
+            .map_err(|e| DatabaseError::QueryError(e))?;
+
+        let docs: HashSet<DocAddress> = searcher.search(&q, &DocSetCollector).unwrap();
+
+        let mut returned: Vec<String> = Vec::with_capacity(docs.len());
+        for doc_address in docs {
+            let doc = searcher.doc(doc_address).unwrap();
+            let fname = doc
+                .get_first(schema.path)
+                .ok_or(DatabaseError::CorruptionError("missing path field"))?
+                .text()
+                .ok_or(DatabaseError::CorruptionError("wrong type for path field"))?
+                .to_string();
+            returned.push(fname);
+        }
+
+        Ok(returned)
+    }
+
+    pub fn reindex(&mut self) -> Result<Opstamp, DatabaseError> {
+        let tracked: Vec<Zest> = self.search(String::from("*"))?;
+        self.writer.delete_all_documents().map_err(|e| DatabaseError::PutError(e))?;
+        self.put_multiple(tracked)
+    }
+}
+
+#[cfg(feature = "graph")]
+impl<'a> Labeller<'a, Zest, (Zest, Zest)> for Database {
+    fn graph_id(&'a self) -> dot::Id<'a> {
+        dot::Id::new("database").unwrap()
+    }
+
+    fn node_id(&'a self, n: &Zest) -> dot::Id<'a> {
+        let meta = std::fs::metadata(n.file.clone()).unwrap();
+        let mod_time = DateTime::from(meta.modified().unwrap());
+        dot::Id::new(mod_time.format("N%Y%m%d%H%M%S").to_string()).unwrap()
+    }
+
+    fn node_label(&'a self, n: &Zest) -> dot::LabelText<'a> {
+        dot::LabelText::label(n.title.clone())
+    }
+}
+
+#[cfg(feature = "graph")]
+impl<'a> GraphWalk<'a, Zest, (Zest, Zest)> for Database {
+    fn nodes(&'a self) -> dot::Nodes<'a, Zest> {
+        Cow::Owned(self.search(String::from("*")).unwrap())
+    }
+
+    fn edges(&'a self) -> dot::Edges<'a, (Zest, Zest)> {
+        let nodes = self.search(String::from("*")).unwrap();
+
+        // Not sure about this approximation, maybewe overapproximate, but this should avoid a lot
+        // of allocations down the line
+        let mut edges = Vec::with_capacity(nodes.len());
+        for source in nodes {
+            for dest in &source.refs {
+                let matching_dests = self.search(format!("file:{}", dest)).unwrap();
+                match matching_dests.len() {
+                    0 => log::warn!("{} contains a broken link: {}", source.file, dest),
+                    1 => {
+                        edges.push((source.clone(), matching_dests.get(0).unwrap().clone()));
+                    }
+                    _ => {
+                        log::warn!(
+                            "{} contains a link that matches multiple files: {}",
+                            source.file,
+                            dest
+                        );
+                        for d in matching_dests {
+                            edges.push((source.clone(), d));
+                        }
+                    }
+                }
+            }
+        }
+
+        return Cow::Owned(edges);
+    }
+
+    fn source(&'a self, edge: &(Zest, Zest)) -> Zest {
+        edge.0.clone()
+    }
+
+    fn target(&'a self, edge: &(Zest, Zest)) -> Zest {
+        edge.1.clone()
     }
 }
