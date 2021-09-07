@@ -23,7 +23,7 @@ fn main() {
     //     );
 
     // println!("{:?}", doc);
-    let matches = clap_app!(zest =>
+    let app = clap_app!(zest =>
       (author: "Thomas Vigouroux <tomvig38@gmail.com>")
       (@arg verbose: -v ... "Verbosity level")
       (@subcommand add =>
@@ -44,8 +44,8 @@ fn main() {
       (@subcommand new =>
        (about: "Checks for new files in the database")
        )
-    )
-    .get_matches();
+    ).setting(clap::AppSettings::ArgRequiredElseHelp);
+    let matches = app.get_matches();
 
     SimpleLogger::new()
         .with_level(match matches.occurrences_of("verbose") {
