@@ -52,6 +52,9 @@ fn main() -> Result<(), Box<dyn Error>> {
       (@subcommand reindex =>
        (about: "Reindexes the whole database as once. If some links are broken, this could fix it")
        )
+      (@subcommand init =>
+       (about: "Initializes zest, using your configuration. This is an alias to 'zest update && zest reindex'")
+       )
     )
     .setting(clap::AppSettings::ArgRequiredElseHelp);
 
@@ -109,6 +112,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if matches.subcommand_matches("reindex").is_some() {
+        db.reindex()?;
+        return Ok(());
+    }
+
+    if matches.subcommand_matches("init").is_some() {
+        db.update()?;
         db.reindex()?;
         return Ok(());
     }
