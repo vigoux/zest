@@ -1181,7 +1181,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zest"
+name = "zest-cli"
 version = "0.1.0"
 dependencies = [
  "clap",

@@ -33,7 +33,7 @@ const REF_FIELD: &'static str = "ref";
 const LAST_MODIF_FIELD: &'static str = "lastmod";
 
 lazy_static! {
-    static ref XDG_DIR: BaseDirectories = BaseDirectories::with_prefix(clap::crate_name!())
+    static ref XDG_DIR: BaseDirectories = BaseDirectories::with_prefix("zest")
         .expect("Impossible to create XDG directories");
 }
 
