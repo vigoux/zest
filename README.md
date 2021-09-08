@@ -4,7 +4,7 @@ A personal note management `CLI` tool.
 
 ## Quickstart
 
-1. Install `zest`: `cargo install zest`
+1. Install `zest`: `cargo install zest-cli`
 2. Create your config file:
 ```yaml
 # The path is ~/.config/zest/config.yml
