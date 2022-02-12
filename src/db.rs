@@ -12,7 +12,7 @@ use tantivy::query::{AllQuery, QueryParser, TermQuery};
 use tantivy::schema::{
     Field, IndexRecordOption, Schema, Term, STORED, STRING, TEXT,
 };
-use tantivy::{tokenizer::*, DateTime, Searcher};
+use tantivy::{DateTime, Searcher};
 use tantivy::{DocAddress, Document, UserOperation};
 use tantivy::{Index, IndexReader, IndexWriter, Opstamp};
 use xdg::BaseDirectories;
@@ -21,7 +21,6 @@ use xdg::BaseDirectories;
 use dot::{GraphWalk, Labeller};
 #[cfg(feature = "graph")]
 use std::borrow::Cow;
-
 use crate::Zest;
 
 const TITLE_FIELD: &'static str = "title";
@@ -31,6 +30,8 @@ const FILE_FIELD: &'static str = "file";
 const PATH_FIELD: &'static str = "path";
 const REF_FIELD: &'static str = "ref";
 const LAST_MODIF_FIELD: &'static str = "lastmod";
+const LANGUAGE: &'static str = "lang";
+const CODE: &'static str = "code";
 
 lazy_static! {
     static ref XDG_DIR: BaseDirectories = BaseDirectories::with_prefix("zest")
@@ -50,6 +51,8 @@ struct DatabaseSchema {
     tag: Field,
     file: Field,
     path: Field,
+    lang: Field,
+    code: Field,
     reff: Field,
     last_modif: Field,
 }
@@ -64,6 +67,8 @@ impl DatabaseSchema {
         let path = schema_builder.add_text_field(PATH_FIELD, STRING | STORED);
         let reff = schema_builder.add_text_field(REF_FIELD, TEXT);
         let last_modif = schema_builder.add_date_field(LAST_MODIF_FIELD, STORED);
+        let lang = schema_builder.add_text_field(LANGUAGE, TEXT);
+        let code = schema_builder.add_text_field(CODE, TEXT);
 
         let schema = schema_builder.build();
 
@@ -71,6 +76,8 @@ impl DatabaseSchema {
             schema,
             title,
             content,
+            lang,
+            code,
             tag,
             file,
             path,
@@ -192,6 +199,16 @@ impl Database {
 
         for tag in z.metadata.tags {
             doc.add_text(schema.tag, tag);
+        }
+
+        for codeblock in z.codeblocks.iter() {
+
+            if codeblock.code.is_some() {
+                doc.add_text(schema.code, codeblock.code.as_ref().unwrap());
+            }
+            if codeblock.language.is_some() {
+                doc.add_text(schema.lang, codeblock.language.as_ref().unwrap());
+            }
         }
 
         for reff in z.refs {
