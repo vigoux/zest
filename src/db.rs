@@ -10,7 +10,7 @@ use tantivy::collector::{Count, DocSetCollector};
 use tantivy::directory::MmapDirectory;
 use tantivy::query::{AllQuery, QueryParser, TermQuery};
 use tantivy::schema::{Field, IndexRecordOption, Schema, Term, STORED, STRING, TEXT};
-use tantivy::{tokenizer::*, DateTime, Searcher};
+use tantivy::{DateTime, Searcher};
 use tantivy::{DocAddress, Document, UserOperation};
 use tantivy::{Index, IndexReader, IndexWriter, Opstamp};
 use xdg::BaseDirectories;

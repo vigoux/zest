@@ -4,8 +4,6 @@ use std::error::Error;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
-use tantivy::Document;
 
 #[derive(Debug)]
 pub enum ZestParsingError {
