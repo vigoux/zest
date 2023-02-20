@@ -1,4 +1,4 @@
-use pulldown_cmark::{Event, Parser, Tag};
+use pulldown_cmark::{Event, Parser, Tag, CodeBlockKind};
 use serde::Deserialize;
 use std::error::Error;
 use std::fmt::Display;
@@ -35,6 +35,27 @@ pub struct ZestMeta {
     pub tags: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ZestCodeBlock {
+    pub code: Option<String>,
+    pub language:Option<String>
+}
+
+impl ZestCodeBlock {
+    pub fn new() -> Self { Self {..Default::default()} }
+
+    pub fn with_lang(&mut self, language: Option<String>) -> &mut Self {
+        self.language = language;
+        self
+    }
+
+    pub fn with_code(&mut self, code: Option<String>) -> &mut Self {
+        self.code = code;
+        self
+    }
+}
+
+
 #[derive(Debug, Clone)]
 pub struct Zest {
     pub title: String,
@@ -42,6 +63,7 @@ pub struct Zest {
     pub file: String,
     pub refs: Vec<String>,
     pub metadata: ZestMeta,
+    pub codeblocks: Vec<ZestCodeBlock>
 }
 
 impl Zest {
@@ -51,6 +73,7 @@ impl Zest {
         file: String,
         refs: Vec<String>,
         metadata: ZestMeta,
+        codeblocks: Vec<ZestCodeBlock>
     ) -> Self {
         Zest {
             title,
@@ -58,6 +81,7 @@ impl Zest {
             file,
             refs,
             metadata,
+            codeblocks
         }
     }
 
@@ -100,33 +124,61 @@ impl Zest {
         let mut title = String::new();
         let mut content = String::new();
         let mut refs = Vec::new();
+        let mut codeblocks = Vec::new();
+        let mut code = ZestCodeBlock::new();
+        let mut in_codeblock = false;
 
         // Now that we've split it, parse the markdown first
         // to extract the text's content
         let mut in_title = false;
         for evt in Parser::new(md_lines.as_ref()) {
-            match (in_title, evt) {
+
+            match (in_title,in_codeblock, evt) {
+
                 // title handling
-                (false, Event::Start(Tag::Heading(1))) if title.is_empty() => in_title = true,
-                (true, Event::Text(t)) => title.push_str(t.as_ref()),
-                (true, Event::End(Tag::Heading(1))) => in_title = false,
+                (false,false, Event::Start(Tag::Heading(1))) if title.is_empty() => in_title = true,
+                (true,false, Event::Text(t)) => title.push_str(t.as_ref()),
+                (true, false,Event::End(Tag::Heading(1))) => in_title = false,
 
                 // Normal text handling
-                (false, Event::Text(t)) => content.push_str(t.as_ref()),
+                (false,false, Event::Text(t)) => content.push_str(t.as_ref()),
 
                 // TODO(vigoux): For now we ignore the type of the link, maybe at some point we
                 // will filter that and have different behaviors for this
-                (false, Event::Start(Tag::Link(_, dest, text))) => {
+                (false,false, Event::Start(Tag::Link(_, dest, text))) => {
                     content.push_str(text.as_ref());
                     refs.push(String::from(dest.as_ref()));
                 }
-                (true, Event::Start(Tag::Link(_, dest, text))) => {
+
+                (true, false, Event::Start(Tag::Link(_, dest, text))) => {
                     title.push_str(text.as_ref());
                     refs.push(String::from(dest.as_ref()));
                 }
 
+                (false,false, Event::Start(Tag::CodeBlock(kind))) => {
+                    in_codeblock = true;
+                    let block_info = match kind {
+                        CodeBlockKind::Fenced(ref lang) => {
+                            if lang.is_empty() {
+                                None
+                            } else {
+                                Some(lang.to_string())
+                            }
+                        }
+                        CodeBlockKind::Indented => Default::default(),
+                    };
+
+                    code.with_lang(block_info);
+
+                },
+                (false, true, Event::Code(c) | Event::Text(c)) => {
+                    code.with_code(Some(c.to_string()));
+                    codeblocks.push(code.clone())
+                },
+
+                (false, true, Event::End(Tag::CodeBlock(_))) => in_codeblock = false,
                 // Newline handling
-                (false, Event::SoftBreak | Event::HardBreak | Event::End(Tag::Heading(_))) => {
+                (false, false, Event::SoftBreak | Event::HardBreak | Event::End(Tag::Heading(_))) => {
                     content.push('\n')
                 }
 
@@ -141,6 +193,6 @@ impl Zest {
             ZestMeta::default()
         };
 
-        Ok(Zest::new(title, content, source, refs, metadata))
+        Ok(Zest::new(title, content, source, refs, metadata, codeblocks))
     }
 }
