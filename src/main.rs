@@ -6,7 +6,6 @@ extern crate clap;
 use db::Database;
 use log::error;
 use log::LevelFilter;
-use simple_logger::SimpleLogger;
 use std::error::Error;
 use zest::Zest;
 
@@ -67,15 +66,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let matches = app.get_matches();
 
-    SimpleLogger::new()
-        .with_level(match matches.occurrences_of("verbose") {
-            0 => LevelFilter::Warn,
-            1 => LevelFilter::Info,
-            2 => LevelFilter::Debug,
+    env_logger::builder()
+        .filter_level(match matches.occurrences_of("verbose") {
+            0 => LevelFilter::Error,
+            1 => LevelFilter::Warn,
+            2 => LevelFilter::Info,
+            3 => LevelFilter::Debug,
             _ => LevelFilter::Trace,
         })
-        .with_colors(true)
-        .init()?;
+        .init();
 
     let mut db = Database::open()?;
 

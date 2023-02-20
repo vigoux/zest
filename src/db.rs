@@ -34,8 +34,8 @@ const LANGUAGE: &'static str = "lang";
 const CODE: &'static str = "code";
 
 lazy_static! {
-    static ref XDG_DIR: BaseDirectories = BaseDirectories::with_prefix("zest")
-        .expect("Impossible to create XDG directories");
+    static ref XDG_DIR: BaseDirectories =
+        BaseDirectories::with_prefix("zest").expect("Impossible to create XDG directories");
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -327,20 +327,18 @@ impl Database {
                     continue;
                 }
 
-                for entry in walkdir::WalkDir::new(std::fs::canonicalize(path).unwrap()) {
-                    let entry = if let Ok(e) = entry {
-                        e
-                    } else {
-                        continue;
-                    };
-                    if let Ok(meta) = std::fs::metadata(entry.path()) {
-                        if !meta.is_file() {
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    }
-
+                for entry in walkdir::WalkDir::new(std::fs::canonicalize(path).unwrap())
+                    .into_iter()
+                    .filter_entry(|e| {
+                        log::trace!("Considering {}", e.path().display());
+                        e.file_name()
+                            .to_str()
+                            .map(|s| !s.starts_with("."))
+                            .unwrap_or(false)
+                    })
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_type().is_file())
+                {
                     let entry = std::fs::canonicalize(entry.path()).unwrap();
                     let entry = entry.to_str().unwrap();
                     log::trace!("Checking {}", entry);
@@ -475,7 +473,9 @@ impl Database {
 
     pub fn reindex(&mut self) -> Result<Opstamp, DatabaseError> {
         let tracked: Vec<Zest> = self.search(String::from("*"))?;
-        self.writer.delete_all_documents().map_err(|e| DatabaseError::PutError(e))?;
+        self.writer
+            .delete_all_documents()
+            .map_err(|e| DatabaseError::PutError(e))?;
         self.put_multiple(tracked)
     }
 }
