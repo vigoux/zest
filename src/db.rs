@@ -67,8 +67,8 @@ impl DatabaseSchema {
         let path = schema_builder.add_text_field(PATH_FIELD, STRING | STORED);
         let reff = schema_builder.add_text_field(REF_FIELD, TEXT);
         let last_modif = schema_builder.add_date_field(LAST_MODIF_FIELD, STORED);
-        let lang = schema_builder.add_text_field(LANGUAGE, TEXT);
-        let code = schema_builder.add_text_field(CODE, TEXT);
+        let lang = schema_builder.add_text_field(LANGUAGE, STRING);
+        let code = schema_builder.add_text_field(CODE, STRING);
 
         let schema = schema_builder.build();
 
