@@ -200,7 +200,10 @@ impl Database {
         }
 
         log::debug!("Adding {:?}", doc);
-        self.writer.add_document(doc);
+        match self.writer.add_document(doc) {
+            Ok(_) => log::debug!("Successfully saved file"),
+            Err(e) => log::warn!("Failed to save file due to {}", e),
+        };
     }
 
     fn commit(&mut self) -> Result<Opstamp, DatabaseError> {
@@ -293,7 +296,10 @@ impl Database {
                 )))
             })
             .collect();
-        self.writer.run(to_execute);
+        match self.writer.run(to_execute) {
+            Ok(_) => log::debug!("writer executed Successfully"),
+            Err(e) => log::warn!("Failed to run writer due to error {}", e),
+        }
         self.commit()
     }
 
