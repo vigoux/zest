@@ -1,4 +1,4 @@
-use pulldown_cmark::{Event, Parser, Tag};
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag};
 use serde::Deserialize;
 use std::error::Error;
 use std::fmt::Display;
@@ -107,9 +107,11 @@ impl Zest {
         for evt in Parser::new(md_lines.as_ref()) {
             match (in_title, evt) {
                 // title handling
-                (false, Event::Start(Tag::Heading(1))) if title.is_empty() => in_title = true,
+                (false, Event::Start(Tag::Heading(HeadingLevel::H1, _, _))) if title.is_empty() => {
+                    in_title = true
+                }
                 (true, Event::Text(t)) => title.push_str(t.as_ref()),
-                (true, Event::End(Tag::Heading(1))) => in_title = false,
+                (true, Event::End(Tag::Heading(HeadingLevel::H1, _, _))) => in_title = false,
 
                 // Normal text handling
                 (false, Event::Text(t)) => content.push_str(t.as_ref()),
@@ -126,9 +128,10 @@ impl Zest {
                 }
 
                 // Newline handling
-                (false, Event::SoftBreak | Event::HardBreak | Event::End(Tag::Heading(_))) => {
-                    content.push('\n')
-                }
+                (
+                    false,
+                    Event::SoftBreak | Event::HardBreak | Event::End(Tag::Heading(_, _, _)),
+                ) => content.push('\n'),
 
                 _ => {}
             }
