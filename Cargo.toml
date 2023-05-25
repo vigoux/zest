@@ -18,12 +18,12 @@ name = "zest"
 tantivy = "^0.17.0"
 lazy_static = "1.4.0"
 pulldown-cmark = "0.9.3"
-serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.8.20"
-xdg = "2.2.0"
+serde = { version = "1.0.163", features = ["derive"] }
+serde_yaml = "0.9.21"
+xdg = "2.5.0"
 log = "0.4.0"
-env_logger = "0.8.4"
-walkdir = "2.3.2"
+env_logger = "0.10.0"
+walkdir = "2.3.3"
 dot = { version = "0.1.4", optional = true }
 
 [features]
