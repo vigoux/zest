@@ -179,7 +179,7 @@ impl Database {
         if let Ok(time) = metadata.modified() {
             let time = DateTime::from(time);
             log::trace!("Creating {} with modified time of {}", fname, time);
-            doc.add_date(schema.last_modif, &time);
+            doc.add_date(schema.last_modif, time);
         } else {
             log::warn!("Could not retrieve {} last modified date.", fname);
         }
@@ -200,7 +200,10 @@ impl Database {
         }
 
         log::debug!("Adding {:?}", doc);
-        self.writer.add_document(doc);
+        match self.writer.add_document(doc) {
+            Ok(_) => log::debug!("Successfully saved file"),
+            Err(e) => log::warn!("Failed to save file due to {}", e),
+        };
     }
 
     fn commit(&mut self) -> Result<Opstamp, DatabaseError> {
@@ -245,7 +248,7 @@ impl Database {
             let fname = doc
                 .get_first(schema.path)
                 .ok_or(DatabaseError::CorruptionError("missing path field"))?
-                .text()
+                .as_text()
                 .ok_or(DatabaseError::CorruptionError("wrong type for path field"))?
                 .to_string();
             if let Ok(z) = Zest::from_file(fname) {
@@ -267,7 +270,7 @@ impl Database {
             .parse_query(query.as_ref())
             .map_err(|e| DatabaseError::QueryError(e))?;
 
-        let to_execute = searcher
+        let to_execute: Vec<_> = searcher
             .search(&q, &DocSetCollector)
             .unwrap()
             .iter()
@@ -280,7 +283,7 @@ impl Database {
                     return None;
                 };
 
-                let fname = if let Some(f) = fname_field.text() {
+                let fname = if let Some(f) = fname_field.as_text() {
                     f
                 } else {
                     log::debug!("{:?} path field is not of the correct type ?", doc_address);
@@ -293,7 +296,10 @@ impl Database {
                 )))
             })
             .collect();
-        self.writer.run(to_execute);
+        match self.writer.run(to_execute) {
+            Ok(_) => log::debug!("writer executed Successfully"),
+            Err(e) => log::warn!("Failed to run writer due to error {}", e),
+        }
         self.commit()
     }
 
@@ -363,13 +369,13 @@ impl Database {
             let fname = doc
                 .get_first(schema.path)
                 .ok_or(DatabaseError::CorruptionError("missing path field"))?
-                .text()
+                .as_text()
                 .ok_or(DatabaseError::CorruptionError("wrong type for path field"))?
                 .to_string();
             let changetime = doc
                 .get_first(schema.last_modif)
                 .ok_or(DatabaseError::CorruptionError("missing file last_modified"))?
-                .date_value()
+                .as_date()
                 .ok_or(DatabaseError::CorruptionError(
                     "wrong type for last_modif field",
                 ))?;
@@ -443,7 +449,7 @@ impl Database {
             let fname = doc
                 .get_first(schema.path)
                 .ok_or(DatabaseError::CorruptionError("missing path field"))?
-                .text()
+                .as_text()
                 .ok_or(DatabaseError::CorruptionError("wrong type for path field"))?
                 .to_string();
             returned.push(fname);
